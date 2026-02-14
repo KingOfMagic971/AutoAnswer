@@ -9,16 +9,17 @@
 # meta developer: @k1sIotaa
 # scope: phantom_reply
 
+import asyncio
 from .. import loader, utils
 from telethon.tl.types import Message
 
 @loader.tds
 class PhantomAutoReplyMod(loader.Module):
-    """Автоответчик на специфическую фразу (для розыгрышей/активностей)"""
+    """Автоответчик в комментарии каналов"""
     
     strings = {
         "name": "PhantomAutoReply",
-        "conf_phrase": "Фраза-триггер (строгое совпадение)",
+        "conf_phrase": "Фраза-триггер",
         "conf_answer": "Текст ответа",
         "conf_status": "Включен/Выключен модуль"
     }
@@ -32,7 +33,7 @@ class PhantomAutoReplyMod(loader.Module):
             ),
             loader.ConfigValue(
                 "REPLY_TEXT", 
-                "Я/Я выиграл", 
+                "Я", 
                 lambda: self.strings["conf_answer"]
             ),
             loader.ConfigValue(
@@ -44,19 +45,19 @@ class PhantomAutoReplyMod(loader.Module):
         )
 
     async def watcher(self, message: Message):
-        """Проверка всех входящих сообщений"""
-        if not self.config["ENABLED"] or not message.text:
+        """Мониторинг сообщений и автоответ в комментарии"""
+        if not self.config["ENABLED"] or not getattr(message, "text", None):
             return
 
-        # Сравниваем текст сообщения с тем, что в конфиге
-        if message.text.strip() == self.config["TARGET_PHRASE"]:
+        # Проверяем, содержит ли сообщение нужную фразу
+        if self.config["TARGET_PHRASE"] in message.text:
             try:
-                # Отправляем ответ в тот же чат/ветку комментариев
-                await message.respond(self.config["REPLY_TEXT"])
-                # Опционально: логируем в консоль юзербота (не обязательно)
-                # logger.info(f"Сработал автоответ в чате {message.chat_id}")
+                # Чтобы ответить именно в комментарии (в ветку сообщения):
+                # 1. Если это пост в канале, отвечаем на него
+                # 2. Если это пересланный пост в чате обсуждения, отвечаем в ветку
+                await message.reply(self.config["REPLY_TEXT"])
             except Exception:
-                # Игнорируем ошибки (например, если запрещено писать в чате)
+                # Если нет прав писать или другая ошибка — пропускаем
                 pass
 
     @loader.command()
@@ -64,5 +65,5 @@ class PhantomAutoReplyMod(loader.Module):
         """Переключить работу автоответа (вкл/выкл)"""
         new_state = not self.config["ENABLED"]
         self.config["ENABLED"] = new_state
-        state_text = "ВКЛЮЧЕН" if new_state else "ВЫКЛЮЧЕН"
-        await utils.answer(message, f"<b>[Phantom]</b> Автоответ теперь: <code>{state_text}</code>")
+        state_text = "<b>ВКЛЮЧЕН</b>" if new_state else "<b>ВЫКЛЮЧЕН</b>"
+        await utils.answer(message, f"<b>[Phantom]</b> Статус автоответа: {state_text}")
