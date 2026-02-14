@@ -9,13 +9,14 @@
 
 from .. import loader, utils
 from telethon.tl.types import Message, MessageEntityMentionName, MessageEntityTextUrl
+from telethon import functions
 import logging
 
 logger = logging.getLogger(__name__)
 
 @loader.tds
 class PhantomWinnerMod(loader.Module):
-    """Авто-выигрыш для @k1sIotaa. Моментальный ответ 'Я' в комментарии."""
+    """Авто-комментатор для @k1sIotaa. Работает во всех каналах."""
     
     strings = {"name": "PhantomWinner"}
 
@@ -36,13 +37,14 @@ class PhantomWinnerMod(loader.Module):
             return
 
         is_winner = False
+        # Проверка текста сообщения
         full_text = message.text or ""
-
-        # 1. Простая проверка текста
-        if self.config["TARGET_PHRASE"] in full_text:
+        
+        # 1. Проверка по фразе или юзернейму в тексте
+        if self.config["TARGET_PHRASE"] in full_text or f"@{self.config['MY_USERNAME']}" in full_text:
             is_winner = True
 
-        # 2. Проверка скрытых ссылок (синий текст на скриншоте)
+        # 2. Проверка сущностей (скрытые ссылки/упоминания)
         if not is_winner and message.entities:
             for entity in message.entities:
                 if isinstance(entity, MessageEntityMentionName):
@@ -50,22 +52,28 @@ class PhantomWinnerMod(loader.Module):
                         is_winner = True
                         break
                 elif isinstance(entity, MessageEntityTextUrl):
-                    url = entity.url.lower()
-                    if str(self.config["MY_ID"]) in url or self.config["MY_USERNAME"].lower() in url:
+                    if str(self.config["MY_ID"]) in entity.url or self.config["MY_USERNAME"].lower() in entity.url:
                         is_winner = True
                         break
 
         if is_winner:
             try:
-                # Пытаемся отправить коммент
+                # Пытаемся получить сообщение из обсуждения для комментирования
+                discussion = await self._client(functions.channels.GetDiscussionMessageRequest(
+                    peer=message.peer_id,
+                    msg_id=message.id
+                ))
+                
+                # Отправляем "Я" в группу обсуждения (комментарии)
                 await self._client.send_message(
-                    entity=message.peer_id,
+                    entity=discussion.chats[0].id,
                     message="Я",
-                    comment_to=message.id
+                    reply_to=discussion.messages[0].id
                 )
-            except Exception:
+                logger.info(f"[Phantom] Оставлен комментарий в канале {message.chat_id}")
+            except Exception as e:
+                # Если обсуждение не найдено или закрыто, пробуем обычный ответ
                 try:
-                    # Если не вышло (например, нет группы обсуждения), просто отвечаем
                     await message.reply("Я")
                 except Exception:
                     pass
