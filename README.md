@@ -1,5 +1,5 @@
 # AutoAnswer
-Модуль автоматический отвечает сообщением Я при виде какого либо никнейиа
+Модуль автоматический отвечает сообщением Я при виде какого либо никнейм
 #              _     _             _aa
 #    _  Branch| |__ | | ___   ___ | |_  _   _
 #   | |/ / _ \| '_ \| |/ _ \ / _ \| __|| | | |
@@ -9,61 +9,75 @@
 # meta developer: @k1sIotaa
 # scope: phantom_reply
 
-import asyncio
-from .. import loader, utils
-from telethon.tl.types import Message
+from hide_lib import loader, utils # type: ignore
+from telethon.tl.types import Message, MessageEntityMentionName, MessageEntityTextUrl
+import logging
+
+logger = logging.getLogger(__name__)
 
 @loader.tds
-class PhantomAutoReplyMod(loader.Module):
-    """Автоответчик в комментарии каналов"""
+class PhantomWinnerMod(loader.Module):
+    """Авто-выигрыш для @k1sIotaa. Моментальный ответ 'Я' в комментарии."""
     
-    strings = {
-        "name": "PhantomAutoReply",
-        "conf_phrase": "Фраза-триггер",
-        "conf_answer": "Текст ответа",
-        "conf_status": "Включен/Выключен модуль"
-    }
+    strings = {"name": "PhantomWinner"}
 
     def __init__(self):
         self.config = loader.ModuleConfig(
             loader.ConfigValue(
                 "TARGET_PHRASE", 
                 "👾𝗣𝗵𝗮𝗻𝘁𝗼𝗺 | М&М | 🐮DAplayers | 🌙𝑳𝒖𝒏𝒂𝒓'𝒔 | k1slotaa🐮🌙", 
-                lambda: self.strings["conf_phrase"]
+                "Фраза для поиска"
             ),
-            loader.ConfigValue(
-                "REPLY_TEXT", 
-                "Я", 
-                lambda: self.strings["conf_answer"]
-            ),
-            loader.ConfigValue(
-                "ENABLED", 
-                True, 
-                lambda: self.strings["conf_status"],
-                validator=loader.validators.Boolean()
-            ),
+            loader.ConfigValue("MY_ID", 7931588510, "Твой Telegram ID"),
+            loader.ConfigValue("MY_USERNAME", "k1sIotaa", "Твой юзернейм"),
+            loader.ConfigValue("ENABLED", True, "Статус работы модуля")
         )
 
     async def watcher(self, message: Message):
-        """Мониторинг сообщений и автоответ в комментарии"""
-        if not self.config["ENABLED"] or not getattr(message, "text", None):
+        if not self.config["ENABLED"] or not isinstance(message, Message):
             return
 
-        # Проверяем, содержит ли сообщение нужную фразу
-        if self.config["TARGET_PHRASE"] in message.text:
+        is_winner = False
+        full_text = message.text or ""
+
+        # 1. Проверка по тексту
+        if self.config["TARGET_PHRASE"] in full_text:
+            is_winner = True
+
+        # 2. Глубокая проверка сущностей (ссылок и упоминаний)
+        if not is_winner and message.entities:
+            for entity in message.entities:
+                # Проверка упоминания по ID (MentionName)
+                if isinstance(entity, MessageEntityMentionName):
+                    if entity.user_id == self.config["MY_ID"]:
+                        is_winner = True
+                        break
+                # Проверка текстовых ссылок (TextUrl)
+                elif isinstance(entity, MessageEntityTextUrl):
+                    url = entity.url.lower()
+                    if str(self.config["MY_ID"]) in url or self.config["MY_USERNAME"].lower() in url:
+                        is_winner = True
+                        break
+
+        if is_winner:
             try:
-                # Чтобы ответить именно в комментарии (в ветку сообщения):
-                # 1. Если это пост в канале, отвечаем на него
-                # 2. Если это пересланный пост в чате обсуждения, отвечаем в ветку
-                await message.reply(self.config["REPLY_TEXT"])
-            except Exception:
-                # Если нет прав писать или другая ошибка — пропускаем
-                pass
+                # Пытаемся отправить ответ именно в ветку комментариев
+                await self._client.send_message(
+                    entity=message.peer_id,
+                    message="Я",
+                    comment_to=message.id
+                )
+                logger.info(f"[Phantom] Успешно ответил в чате {message.chat_id}")
+            except Exception as e:
+                try:
+                    # Резервный метод через обычный reply
+                    await message.reply("Я")
+                except Exception as ex:
+                    logger.error(f"[Phantom] Не удалось отправить ответ: {ex}")
 
     @loader.command()
     async def phstat(self, message: Message):
-        """Переключить работу автоответа (вкл/выкл)"""
-        new_state = not self.config["ENABLED"]
-        self.config["ENABLED"] = new_state
-        state_text = "<b>ВКЛЮЧЕН</b>" if new_state else "<b>ВЫКЛЮЧЕН</b>"
-        await utils.answer(message, f"<b>[Phantom]</b> Статус автоответа: {state_text}")
+        """Переключить модуль (Вкл/Выкл)"""
+        self.config["ENABLED"] = not self.config["ENABLED"]
+        status = "ВКЛЮЧЕН" if self.config["ENABLED"] else "ВЫКЛЮЧЕН"
+        await utils.answer(message, f"<b>[Phantom]</b> Модуль теперь <code>{status}</code>")
