@@ -7,7 +7,7 @@
 # meta developer: @k1sIotaa
 # scope: phantom_reply
 
-from hide_lib import loader, utils # type: ignore
+from .. import loader, utils
 from telethon.tl.types import Message, MessageEntityMentionName, MessageEntityTextUrl
 import logging
 
@@ -32,25 +32,23 @@ class PhantomWinnerMod(loader.Module):
         )
 
     async def watcher(self, message: Message):
-        if not self.config["ENABLED"] or not isinstance(message, Message):
+        if not isinstance(message, Message) or not self.config["ENABLED"]:
             return
 
         is_winner = False
         full_text = message.text or ""
 
-        # 1. Проверка по тексту
+        # 1. Простая проверка текста
         if self.config["TARGET_PHRASE"] in full_text:
             is_winner = True
 
-        # 2. Глубокая проверка сущностей (ссылок и упоминаний)
+        # 2. Проверка скрытых ссылок (синий текст на скриншоте)
         if not is_winner and message.entities:
             for entity in message.entities:
-                # Проверка упоминания по ID (MentionName)
                 if isinstance(entity, MessageEntityMentionName):
                     if entity.user_id == self.config["MY_ID"]:
                         is_winner = True
                         break
-                # Проверка текстовых ссылок (TextUrl)
                 elif isinstance(entity, MessageEntityTextUrl):
                     url = entity.url.lower()
                     if str(self.config["MY_ID"]) in url or self.config["MY_USERNAME"].lower() in url:
@@ -59,23 +57,22 @@ class PhantomWinnerMod(loader.Module):
 
         if is_winner:
             try:
-                # Пытаемся отправить ответ именно в ветку комментариев
+                # Пытаемся отправить коммент
                 await self._client.send_message(
                     entity=message.peer_id,
                     message="Я",
                     comment_to=message.id
                 )
-                logger.info(f"[Phantom] Успешно ответил в чате {message.chat_id}")
-            except Exception as e:
+            except Exception:
                 try:
-                    # Резервный метод через обычный reply
+                    # Если не вышло (например, нет группы обсуждения), просто отвечаем
                     await message.reply("Я")
-                except Exception as ex:
-                    logger.error(f"[Phantom] Не удалось отправить ответ: {ex}")
+                except Exception:
+                    pass
 
     @loader.command()
     async def phstat(self, message: Message):
         """Переключить модуль (Вкл/Выкл)"""
         self.config["ENABLED"] = not self.config["ENABLED"]
         status = "ВКЛЮЧЕН" if self.config["ENABLED"] else "ВЫКЛЮЧЕН"
-        await utils.answer(message, f"<b>[Phantom]</b> Модуль теперь <code>{status}</code>")
+        await utils.answer(message, f"<b>[Phantom]</b> Модуль: <code>{status}</code>")
